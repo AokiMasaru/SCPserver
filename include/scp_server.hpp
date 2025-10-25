@@ -8,7 +8,10 @@ namespace scp {
 class SCPServer {
 public:
     // コンストラクタ: デフォルトポートは 2222
-    explicit SCPServer(unsigned short port = 2222) : port_(port) {}
+    // host_key: SSH サーバのホスト鍵ファイルパス（libssh 使用時に必要）
+    // allow_password: パスワード認証を受け付けるかどうか
+    explicit SCPServer(unsigned short port = 2222, const std::string& host_key = "", bool allow_password = false)
+        : port_(port), host_key_(host_key), allow_password_(allow_password) {}
     ~SCPServer();
 
     // サーバを起動する（ブロッキング）
@@ -20,6 +23,8 @@ public:
 private:
     unsigned short port_;
     bool running_ = false;
+    std::string host_key_;
+    bool allow_password_ = false;
 };
 
 } // namespace scp
