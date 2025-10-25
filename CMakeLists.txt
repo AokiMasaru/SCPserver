@@ -6,16 +6,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 option(USE_LIBSSH "Build with libssh support (recommended for real SCP)" ON)
 
+# libssh の有無を検出して安全に扱う
+set(LIBSSH_AVAILABLE OFF)
 if(USE_LIBSSH)
   find_package(PkgConfig REQUIRED)
   pkg_check_modules(LIBSSH libssh)
   if(LIBSSH_FOUND)
     message(STATUS "Found libssh: ${LIBSSH_VERSION}")
     add_definitions(-DHAVE_LIBSSH)
-    include_directories(${LIBSSH_INCLUDE_DIRS})
-    link_directories(${LIBSSH_LIBRARY_DIRS})
+    # include / link 情報はターゲットに付与する
+    set(LIBSSH_AVAILABLE ON)
+    set(LIBSSH_INCLUDE_DIRS ${LIBSSH_INCLUDE_DIRS})
+    set(LIBSSH_LIBRARY_DIRS ${LIBSSH_LIBRARY_DIRS})
+    set(LIBSSH_LIBRARIES ${LIBSSH_LIBRARIES})
   else()
-    message(WARNING "libssh not found — building fallback TCP skeleton. To enable libssh install libssh-dev and re-run cmake with -DUSE_LIBSSH=ON")
+    message(FATAL_ERROR "libssh not found but -DUSE_LIBSSH=ON. Install libssh-dev (Debian/Ubuntu: libssh-dev pkg-config) or re-run cmake with -DUSE_LIBSSH=OFF")
   endif()
 endif()
 
@@ -25,8 +30,10 @@ file(GLOB SOURCES src/*.cpp)
 
 add_executable(scpserver ${SOURCES})
 
-if(LIBSSH_FOUND)
-  target_link_libraries(scpserver ${LIBSSH_LIBRARIES})
+if(LIBSSH_AVAILABLE)
+  target_include_directories(scpserver PRIVATE ${LIBSSH_INCLUDE_DIRS})
+  target_link_directories(scpserver PRIVATE ${LIBSSH_LIBRARY_DIRS})
+  target_link_libraries(scpserver PRIVATE ${LIBSSH_LIBRARIES})
 endif()
 
 enable_testing()

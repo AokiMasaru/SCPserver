@@ -11,23 +11,23 @@
 ```bash
 sudo apt update
 sudo apt install build-essential cmake pkg-config libssl-dev libssh-dev
-```
-
-ビルド手順:
-
+依存関係（Debian/Ubuntu の例）:
 ```bash
+# 省略可: リポジトリ付属のスクリプトで一括インストール
+./scripts/install-deps-debian.sh
+```
 mkdir -p build
 cmake -S . -B build -DUSE_LIBSSH=ON
 cmake --build build -- -j
 ```
 
 テスト（簡易）:
-
+ビルド手順:
 ```bash
-# 今は単体テストは置いていません。将来的に ctest を追加してください。
+mkdir -p build
+cmake -S . -B build -DUSE_LIBSSH=ON
+cmake --build build -- -j$(nproc)
 ```
-
-実行例:
 
 ```bash
 ./build/scpserver 2222
