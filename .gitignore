@@ -9,3 +9,11 @@
 /CMakeFiles/
 /CMakeCache.txt
 /cmake_install.cmake
+
+tests/host_rsa
+
+tests/host_rsa.pub
+
+tests/user_rsa
+
+tests/user_rsa.pub

@@ -2,8 +2,8 @@
 このリポジトリは C++ による SCP サーバ実装のためのテンプレートです。AI エージェントはまずここを読み、ビルド／実装箇所／注意点を把握してから作業に入ってください。
 
 ## 必読ファイル（まずこれを読む）
-- `CMakeLists.txt` — ビルド設定。`-DUSE_LIBSSH=ON` オプションに対応。
-- `src/` — 実装（`src/main.cpp`, `src/scp_server.cpp`）。`scp_server.cpp` は libssh 未導入時のフォールバック実装を含む。
+- `CMakeLists.txt` — ビルド設定。libssh は必須です。
+- `src/` — 実装（`src/main.cpp`, `src/scp_server.cpp`）。
 - `include/` — 公開ヘッダ（`include/scp_server.hpp`）。
 - `README.md` — 依存とビルド手順の短いまとめ。
 
@@ -15,28 +15,36 @@ sudo apt update
 sudo apt install build-essential cmake pkg-config libssl-dev libssh-dev
 ```
 
-2. ビルド手順（推奨）:
+2. ビルド手順:
 
 ```bash
 mkdir -p build
-cmake -S . -B build -DUSE_LIBSSH=ON
+cmake -S . -B build
 cmake --build build -- -j
 ```
 
-3. 実行例（フォールバック or libssh 実装前）:
+3. 実行例:
 
 ```bash
 ./build/scpserver 2222
 ```
 
 ## 実装上の重要ポイント（このリポジトリ固有）
-- `src/scp_server.cpp` は libssh がない場合の TCP フォールバックを提供しますが、SCP/SSH プロトコル仕様を満たしません。本物の SCP サーバは libssh を使って SSH セッションとチャネルを処理する必要があります。
+- SCP サーバは libssh を使って SSH セッションとチャネルを処理します。
 - libssh 実装での主な手順: `ssh_bind` の作成→鍵オプション設定→`ssh_bind_listen`→接続受け入れ→`ssh_new`/`ssh_handle_key_exchange`→認証→`ssh_channel_open_session`→SCP サブシステムの開始／ハンドリング。
 - セキュリティ: 認証、鍵管理、権限制御は慎重に。テスト用の鍵以外をコミットしないでください。
 
 ## テストと CI
-- テストフレームワークは未追加。将来的には `ctest` を用意してください。手動チェックは `build/scpserver` を起動して簡易的に接続振る舞いを確認します。
-- CI を追加する場合は、ビルドステップに `cmake -S . -B build -DUSE_LIBSSH=ON` と `cmake --build build -- -j` を入れ、libssh がない環境向けに `-DUSE_LIBSSH=OFF` の行も用意してください。
+- テストは `ctest` (バージョン 3.22.1以上) を使用します。以下のような項目をテストに含めてください：
+  - ユニットテスト: libssh セッション管理、認証処理
+  - 統合テスト: SCP コマンドの実行、ファイル転送
+  - セキュリティテスト: 不正な認証試行、権限チェック
+- テストの実行方法:
+  ```bash
+  cd build && ctest --output-on-failure
+  ```
+- 新しいテストを追加する場合は、`tests/` ディレクトリ以下に配置し、`CMakeLists.txt` に追加してください。
+- CI を追加する場合は、ビルドステップに `cmake -S . -B build` と `cmake --build build -- -j`、そしてテストステップとして `ctest --test-dir build --output-on-failure` を入れてください。
 
 ## 変更・PR の方針（短く実務的）
 - 小さな論理単位で PR を作る。必ずビルドを通す（`cmake`→`cmake --build`）。
@@ -59,7 +67,7 @@ libssh による ssh_bind の初期化と簡易ハンドラを追加しました
 ```
 
 ## 追加作業の提案（必要なら私がやります）
-- libssh を使った最小限の接続受け入れ + 鍵認証のサンプル実装を追加できます。
-- 開発用 Dockerfile（libssh を含む）と GitHub Actions のワークフローを作成できます。
+- SCP プロトコルハンドリングの改善を実装できます。
+- 開発用 Dockerfile と GitHub Actions のワークフローを作成できます。
 
 不足・追記したい箇所があれば、対象ファイル名と具体的要望を教えてください。

@@ -36,4 +36,25 @@ if(LIBSSH_AVAILABLE)
   target_link_libraries(scpserver PRIVATE ${LIBSSH_LIBRARIES})
 endif()
 
+# スタティックライブラリとして実装部分を分離
+add_library(scpserver_lib STATIC
+    src/scp_server.cpp
+)
+
+if(LIBSSH_AVAILABLE)
+    target_include_directories(scpserver_lib PRIVATE ${LIBSSH_INCLUDE_DIRS})
+    target_link_directories(scpserver_lib PRIVATE ${LIBSSH_LIBRARY_DIRS})
+    target_link_libraries(scpserver_lib PRIVATE ${LIBSSH_LIBRARIES})
+endif()
+
+# メイン実行ファイルは scpserver_lib をリンク
+target_link_libraries(scpserver PRIVATE scpserver_lib)
+
+# テストを有効化
 enable_testing()
+
+# Google Test のインストールチェック
+find_package(GTest REQUIRED)
+
+# テストディレクトリの追加
+add_subdirectory(tests)

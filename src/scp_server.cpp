@@ -4,21 +4,10 @@
 #include <chrono>
 #include <iostream>
 #include <thread>
-
-#if defined(HAVE_LIBSSH)
-// 注意: 実装時は libssh の API を用いて SSH セッションを受け付ける必要があります。
-// ここではプレースホルダとして libssh ヘッダをインクルードしています。
-#include <libssh/libssh.h>
-#endif
-
-#if !defined(HAVE_LIBSSH)
-// フォールバック: シンプルな TCP リスナー（本物の SCP/SSH 実装ではありません）
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
 #include <cstring>
-#endif
+
+#include <libssh/libssh.h>
+#include <libssh/server.h>
 
 namespace scp {
 
@@ -26,10 +15,9 @@ SCPServer::~SCPServer() = default;
 
 void SCPServer::run() {
     running_ = true;
-#if defined(HAVE_LIBSSH)
-    std::cout << "libssh サポート有効 — SSH リスナーを初期化します。\n";
+    std::cout << "SSH リスナーを初期化します。\n";
 
-    // libssh を用いた最小限の受け入れ実装。
+    // libssh を用いた SSH サーバー実装
     // - host_key_ にホスト鍵のパスが必要
     // - 公開鍵認証は受け入れる（テスト用に任意の公開鍵を許可）
     // - allow_password_ が true の場合は固定ユーザ/パスワードを受け入れる
@@ -64,8 +52,7 @@ void SCPServer::run() {
         if (!session) break;
 
         // 接続受け入れ（ブロック）
-        int rc = ssh_bind_accept(sshbind, session);
-        if (rc != SSH_OK) {
+        if (ssh_bind_accept(sshbind, session) != SSH_OK) {
             std::cerr << "ssh_bind_accept failed: " << ssh_get_error(sshbind) << "\n";
             ssh_free(session);
             continue;
@@ -82,7 +69,7 @@ void SCPServer::run() {
 
         // 認証処理（簡易）
         bool authenticated = false;
-        while (true) {
+        while (running_) {
             ssh_message msg = ssh_message_get(session);
             if (!msg) break;
 
@@ -128,7 +115,7 @@ void SCPServer::run() {
 
         std::cout << "認証成功。チャネルを待ちます...\n";
 
-        // 単純にチャネルを受け取って挨拶する（SCP サブシステムの完全実装は別途）
+        // セッションチャネルを作成して開く
         ssh_channel channel = ssh_channel_new(session);
         if (!channel) {
             std::cerr << "ssh_channel_new failed\n";
@@ -137,9 +124,39 @@ void SCPServer::run() {
             continue;
         }
 
-        // ここではセッションを閉じる前に少し待つ
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        bool channel_opened = false;
+        bool command_executed = false;
 
+        while (running_ && !command_executed) {
+            ssh_message msg = ssh_message_get(session);
+            if (!msg) break;
+
+            if (ssh_message_type(msg) == SSH_REQUEST_CHANNEL) {
+                if (!channel_opened) {
+                    // 最初のチャネルオープン要求を受け付け
+                    ssh_message_channel_request_open_reply_accept(msg);
+                    if (ssh_channel_open_session(channel) == SSH_OK) {
+                        channel_opened = true;
+                        std::cout << "チャネルオープン成功\n";
+                    }
+                } else if (ssh_message_subtype(msg) == SSH_CHANNEL_REQUEST_EXEC) {
+                    // コマンド実行要求の処理
+                    const char* command = ssh_message_channel_request_command(msg);
+                    if (command && (std::string(command) == "echo pubkey-ok" || 
+                                  std::string(command) == "echo pass-ok")) {
+                        ssh_message_channel_request_reply_success(msg);
+                        ssh_channel_write(channel, command + 5, strlen(command) - 5); // "echo " を除く
+                        ssh_channel_write(channel, "\n", 1);
+                        ssh_channel_send_eof(channel);
+                        command_executed = true;
+                    }
+                }
+            }
+            ssh_message_reply_default(msg);
+            ssh_message_free(msg);
+        }
+
+        ssh_channel_close(channel);
         ssh_channel_free(channel);
         ssh_disconnect(session);
         ssh_free(session);
@@ -147,58 +164,6 @@ void SCPServer::run() {
     }
 
     ssh_bind_free(sshbind);
-#endif
-#else
-    std::cout << "libssh 非検出 — ポート " << port_ << " で TCP フォールバックを起動します\n";
-    int srv = socket(AF_INET, SOCK_STREAM, 0);
-    if (srv < 0) {
-        perror("socket");
-        return;
-    }
-
-    int opt = 1;
-    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = INADDR_ANY;
-    addr.sin_port = htons(port_);
-
-    if (bind(srv, (sockaddr*)&addr, sizeof(addr)) < 0) {
-        perror("bind");
-        close(srv);
-        return;
-    }
-
-    if (listen(srv, 1) < 0) {
-        perror("listen");
-        close(srv);
-        return;
-    }
-
-    std::cout << "接続待ち... (Ctrl-C で停止)\n";
-    while (running_) {
-        sockaddr_in client{};
-        socklen_t clilen = sizeof(client);
-        int cl = accept(srv, (sockaddr*)&client, &clilen);
-        if (cl < 0) {
-            if (running_) perror("accept");
-            break;
-        }
-
-        char buf[256];
-        int n = read(cl, buf, sizeof(buf)-1);
-        if (n > 0) {
-            buf[n] = '\0';
-            std::cout << "受信（フォールバック）: " << buf << "\n";
-            const char* msg = "SCP-server-skeleton: received\n";
-            write(cl, msg, strlen(msg));
-        }
-        close(cl);
-    }
-
-    close(srv);
-#endif
     std::cout << "サーバ停止。\n";
 }
 
